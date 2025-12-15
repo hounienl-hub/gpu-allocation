@@ -18,18 +18,12 @@ nodes:
       hostPort: 443
       protocol: TCP
 
-  # Small GPU nodes (2 nodes with 4x H200 7g70gb each, 7x 1g10gb MIGs per card)
-  - role: worker
-    labels:
-      node-pool: small
+  # Small GPU node (1 node with 4x H200 7g70gb cards, 7x 1g10gb MIGs per card)
   - role: worker
     labels:
       node-pool: small
 
-  # Medium GPU nodes (2 nodes with 4x H200 each, 3x 2g20gb + 1x 1g10gb MIGs per card)
-  - role: worker
-    labels:
-      node-pool: medium
+  # Medium GPU node (1 node with 4x H200 7g70gb cards, 3x 2g20gb + 1x 1g10gb MIGs per card)
   - role: worker
     labels:
       node-pool: medium

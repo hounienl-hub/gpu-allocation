@@ -10,9 +10,9 @@ chmod +x setup-cluster.sh configure-mig-profiles.sh
 ```
 
 **What this does:**
-- Creates a Kind cluster with 6 worker nodes (3 small, 3 medium)
+- Creates a Kind cluster with 2 worker nodes (1 small, 1 medium)
 - Installs fake-gpu-operator via Helm
-- Configures MIG profiles on all nodes
+- Configures MIG profiles on both nodes
 - Labels nodes for GPU simulation
 
 **Expected output:**
@@ -20,8 +20,12 @@ chmod +x setup-cluster.sh configure-mig-profiles.sh
 Cluster setup complete!
 
 Summary:
-- Small nodes (3): 4 GPUs each, 7x 1g.10gb MIGs per GPU = 28 MIG devices per node
-- Medium nodes (3): 4 GPUs each, (3x 2g.20gb + 1x 1g.10gb) MIGs per GPU = 16 MIG devices per node
+- Small node (1): 4× H200 cards, 7× 1g.10gb MIGs per card = 28× 1g.10gb total
+- Medium node (1): 4× H200 cards, 3× 2g.20gb + 1× 1g.10gb MIGs per card = 12× 2g.20gb + 4× 1g.10gb total
+
+Total Cluster Capacity:
+- 32× 1g.10gb MIG devices
+- 12× 2g.20gb MIG devices
 ```
 
 ### 2. Deploy the Webhook
@@ -154,13 +158,13 @@ kind delete cluster --name gpu-sim-cluster
 
 After setup, you'll have:
 
-| Node Type | Count | GPUs/Node | MIG Profile | Total MIG Devices |
-|-----------|-------|-----------|-------------|-------------------|
-| Small     | 3     | 4         | 7× 1g.10gb  | 84× 1g.10gb       |
-| Medium    | 3     | 4         | 3× 2g.20gb + 1× 1g.10gb | 36× 2g.20gb + 12× 1g.10gb |
+| Node Type | Hardware | MIG Profile per Card | Total MIG Devices |
+|-----------|----------|---------------------|-------------------|
+| Small (1) | 4× H200 (7g.70gb) | 7× 1g.10gb | 28× 1g.10gb |
+| Medium (1) | 4× H200 (7g.70gb) | 3× 2g.20gb + 1× 1g.10gb | 12× 2g.20gb + 4× 1g.10gb |
 
-**Total Capacity:**
-- 96× 1g.10gb MIG devices (84 from small + 12 from medium)
-- 36× 2g.20gb MIG devices (all from medium)
+**Total Cluster Capacity:**
+- 32× 1g.10gb MIG devices
+- 12× 2g.20gb MIG devices
 
 The webhook ensures optimal GPU utilization by automatically falling back to available resources!

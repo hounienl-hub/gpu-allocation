@@ -14,7 +14,7 @@ helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-ope
   --wait
 
 echo "Labeling nodes for GPU simulation..."
-# Label small nodes
+# Label small node
 for node in $(kubectl get nodes -l node-pool=small -o jsonpath='{.items[*].metadata.name}'); do
   echo "Configuring small node: $node"
   kubectl label node $node run.ai/simulated-gpu-node-pool=small --overwrite
@@ -23,7 +23,7 @@ for node in $(kubectl get nodes -l node-pool=small -o jsonpath='{.items[*].metad
   kubectl label node $node nvidia.com/gpu.product=NVIDIA-H200 --overwrite
 done
 
-# Label medium nodes
+# Label medium node
 for node in $(kubectl get nodes -l node-pool=medium -o jsonpath='{.items[*].metadata.name}'); do
   echo "Configuring medium node: $node"
   kubectl label node $node run.ai/simulated-gpu-node-pool=medium --overwrite
@@ -41,8 +41,12 @@ echo "Configuring MIG profiles on nodes..."
 echo "Cluster setup complete!"
 echo ""
 echo "Summary:"
-echo "- Small nodes (3): 4 GPUs each, 7x 1g.10gb MIGs per GPU = 28 MIG devices per node"
-echo "- Medium nodes (3): 4 GPUs each, (3x 2g.20gb + 1x 1g.10gb) MIGs per GPU = 16 MIG devices per node"
+echo "- Small node (1): 4× H200 cards, 7× 1g.10gb MIGs per card = 28× 1g.10gb total"
+echo "- Medium node (1): 4× H200 cards, 3× 2g.20gb + 1× 1g.10gb MIGs per card = 12× 2g.20gb + 4× 1g.10gb total"
+echo ""
+echo "Total Cluster Capacity:"
+echo "- 32× 1g.10gb MIG devices"
+echo "- 12× 2g.20gb MIG devices"
 echo ""
 echo "View nodes:"
 echo "kubectl get nodes --show-labels"

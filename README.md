@@ -4,19 +4,23 @@ This project simulates GPU allocation in Kubernetes using a local Kind cluster a
 
 ## Architecture
 
-### Node Groups
+### Node Configuration
 
-#### Small Nodes (3 nodes)
-- **GPU Type**: NVIDIA H200 70GB (simulated)
-- **GPUs per node**: 4 cards (each 7g.70gb)
-- **MIG Profile per GPU**: 7x 1g.10gb
-- **Total MIG devices per node**: 28 (1g.10gb)
+Both nodes use identical hardware (NVIDIA H200 70GB with 4 cards), but different MIG configurations:
 
-#### Medium Nodes (3 nodes)
-- **GPU Type**: NVIDIA H200 70GB (simulated)
-- **GPUs per node**: 4 cards (each 7g.70gb)
-- **MIG Profile per GPU**: 3x 2g.20gb + 1x 1g.10gb
-- **Total MIG devices per node**: 12x 2g.20gb + 4x 1g.10gb
+#### Small Node (1 node)
+- **Hardware**: 4× NVIDIA H200 cards (7g.70gb each)
+- **MIG Profile**: 7× 1g.10gb per card
+- **Total MIG devices**: 28× 1g.10gb
+
+#### Medium Node (1 node)
+- **Hardware**: 4× NVIDIA H200 cards (7g.70gb each)
+- **MIG Profile**: 3× 2g.20gb + 1× 1g.10gb per card
+- **Total MIG devices**: 12× 2g.20gb + 4× 1g.10gb
+
+### Total Cluster Capacity
+- **32× 1g.10gb** MIG devices
+- **12× 2g.20gb** MIG devices
 
 ### Intelligent GPU Allocation Webhook
 
@@ -50,9 +54,9 @@ chmod +x setup-cluster.sh configure-mig-profiles.sh
 ```
 
 This will:
-- Create a Kind cluster with 3 small nodes and 3 medium nodes
+- Create a Kind cluster with 2 worker nodes (1 small, 1 medium)
 - Install fake-gpu-operator
-- Configure MIG profiles on all nodes
+- Configure MIG profiles on both nodes
 - Label nodes appropriately
 
 ### 2. Build and Deploy the Webhook
@@ -170,14 +174,15 @@ The NVIDIA H200 with 70GB memory supports various MIG profiles:
 
 ### Current Configuration
 
-**Small Nodes**: Maximize small MIG instances
-- 4 cards × 7 instances = 28× 1g.10gb per node
-- Total across 3 nodes: 84× 1g.10gb
+**Small Node**: Maximizes small MIG instances
+- 4× H200 cards × 7 instances each = 28× 1g.10gb MIG devices
 
-**Medium Nodes**: Mixed profile for flexibility
-- 4 cards × (3× 2g.20gb + 1× 1g.10gb) per card
-- Total per node: 12× 2g.20gb + 4× 1g.10gb
-- Total across 3 nodes: 36× 2g.20gb + 12× 1g.10gb
+**Medium Node**: Mixed profile for larger workloads with fallback option
+- 4× H200 cards × (3× 2g.20gb + 1× 1g.10gb) each = 12× 2g.20gb + 4× 1g.10gb MIG devices
+
+**Total Cluster**: 32× 1g.10gb + 12× 2g.20gb MIG devices
+
+This configuration allows testing the webhook's intelligent fallback behavior when 2g.20gb resources on the medium node become exhausted - pods automatically get scheduled with 1g.10gb resources instead.
 
 ## Troubleshooting
 
@@ -242,16 +247,17 @@ kind delete cluster --name gpu-sim-cluster
 │                     Kind Cluster                             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ Small Node 1 │  │ Small Node 2 │  │ Small Node 3 │      │
-│  │ 28x 1g.10gb  │  │ 28x 1g.10gb  │  │ 28x 1g.10gb  │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │Medium Node 1 │  │Medium Node 2 │  │Medium Node 3 │      │
-│  │12x 2g.20gb   │  │12x 2g.20gb   │  │12x 2g.20gb   │      │
-│  │ 4x 1g.10gb   │  │ 4x 1g.10gb   │  │ 4x 1g.10gb   │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ┌──────────────────────┐  ┌──────────────────────┐        │
+│  │   Small Worker Node   │  │  Medium Worker Node  │        │
+│  │ 4× H200 (7g.70gb)     │  │ 4× H200 (7g.70gb)    │        │
+│  │                       │  │                      │        │
+│  │ All 4 cards:          │  │ All 4 cards:         │        │
+│  │ 7× 1g.10gb each       │  │ 3× 2g.20gb +         │        │
+│  │                       │  │ 1× 1g.10gb each      │        │
+│  │                       │  │                      │        │
+│  │ Total: 28× 1g.10gb    │  │ Total: 12× 2g.20gb + │        │
+│  │                       │  │        4× 1g.10gb    │        │
+│  └──────────────────────┘  └──────────────────────┘        │
 │                                                               │
 │  ┌─────────────────────────────────────────────────┐        │
 │  │        GPU Allocation Webhook                    │        │

@@ -11,18 +11,18 @@ Complete setup for simulating GPU allocation in Kubernetes using:
 
 ### Hardware Simulation
 - **GPU Model**: NVIDIA H200 with 70GB memory (7g.70gb per card)
-- **Total**: 24 H200 GPUs (4 cards × 6 nodes)
+- **Total**: 8 H200 cards across 2 worker nodes (4 cards per node)
 
-### Node Groups
+### Node Configuration
 
-| Group  | Nodes | Cards/Node | MIG Profile per Card | Total MIG Devices |
-|--------|-------|------------|---------------------|-------------------|
-| Small  | 3     | 4          | 7× 1g.10gb          | 84× 1g.10gb       |
-| Medium | 3     | 4          | 3× 2g.20gb + 1× 1g.10gb | 36× 2g.20gb + 12× 1g.10gb |
+| Node Type | Hardware | MIG Profile per Card | Total MIG Devices |
+|-----------|----------|---------------------|-------------------|
+| Small (1) | 4× H200 cards | 7× 1g.10gb | 28× 1g.10gb |
+| Medium (1) | 4× H200 cards | 3× 2g.20gb + 1× 1g.10gb | 12× 2g.20gb + 4× 1g.10gb |
 
 ### Total Cluster Capacity
-- **96× 1g.10gb** MIG devices
-- **36× 2g.20gb** MIG devices
+- **32× 1g.10gb** MIG devices
+- **12× 2g.20gb** MIG devices
 
 ## Project Structure
 
@@ -64,8 +64,8 @@ Complete setup for simulating GPU allocation in Kubernetes using:
 
 ### 1. Cluster Configuration (`kind-gpu-cluster.yaml`)
 - 1 control-plane node
-- 3 small worker nodes (labeled `node-pool: small`)
-- 3 medium worker nodes (labeled `node-pool: medium`)
+- 1 small worker node (labeled `node-pool: small`)
+- 1 medium worker node (labeled `node-pool: medium`)
 
 ### 2. GPU Operator Values (`fake-gpu-values.yaml`)
 Configures fake-gpu-operator with:
@@ -87,8 +87,8 @@ Main deployment script that:
 
 #### `configure-mig-profiles.sh`
 Applies MIG configurations via node annotations:
-- **Small nodes**: 7× 1g.10gb per GPU (4 GPUs)
-- **Medium nodes**: 3× 2g.20gb + 1× 1g.10gb per GPU (4 GPUs)
+- **Small node**: 7× 1g.10gb per card (4 cards)
+- **Medium node**: 3× 2g.20gb + 1× 1g.10gb per card (4 cards)
 
 ### 4. Admission Webhook
 
@@ -172,10 +172,10 @@ kubectl get pod test-medium-gpu -o yaml
 ```bash
 ./setup-cluster.sh
 ```
-- Kind creates 7-node cluster (1 control-plane + 6 workers)
+- Kind creates 3-node cluster (1 control-plane + 2 GPU workers)
 - Helm installs fake-gpu-operator
 - Nodes get labeled for GPU simulation
-- MIG profiles applied via annotations
+- MIG profiles applied via annotations (small & medium)
 
 ### 2. Webhook Deployment
 ```bash
@@ -250,10 +250,11 @@ GPU:.spec.containers[0].resources.requests
 
 ## Customization Ideas
 
-### Add More Node Pools
-Edit `kind-gpu-cluster.yaml` and `fake-gpu-values.yaml` to add:
-- Large nodes (7g.70gb full GPUs)
-- Extra-small nodes (more 1g.10gb instances)
+### Add More Worker Nodes
+Edit `kind-gpu-cluster.yaml` to add more worker nodes with different GPU configurations:
+- Add nodes with full 7g.70gb GPUs
+- Add nodes with only 1g.10gb MIG instances
+- Create heterogeneous clusters for testing scheduler behavior
 
 ### Enhance Webhook
 Modify `webhook/main.go` to:
