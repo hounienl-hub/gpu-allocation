@@ -5,8 +5,12 @@
 ### 1. Setup the Cluster
 
 ```bash
-chmod +x setup-cluster.sh configure-mig-profiles.sh
-./setup-cluster.sh
+# Using Make (recommended)
+make setup
+
+# Or manually:
+chmod +x scripts/setup-cluster.sh scripts/configure-mig-profiles.sh
+./scripts/setup-cluster.sh
 ```
 
 **What this does:**
@@ -31,10 +35,14 @@ Total Cluster Capacity:
 ### 2. Deploy the Webhook
 
 ```bash
+# Using Make (recommended)
+make deploy-webhook
+
+# Or manually:
 cd webhook
-chmod +x build-and-deploy.sh generate-certs.sh init-go-module.sh
-./init-go-module.sh  # Initialize Go dependencies
-./build-and-deploy.sh
+chmod +x scripts/*.sh
+./scripts/init-go-module.sh  # Initialize Go dependencies
+./scripts/build-and-deploy.sh
 cd ..
 ```
 
@@ -56,7 +64,7 @@ kubectl get pods -n gpu-webhook
 
 ```bash
 # Test a pod that requests 2g.20gb (will fallback to 1g.10gb if unavailable)
-kubectl apply -f test-pods/test-medium-gpu.yaml
+kubectl apply -f manifests/test-pods/test-medium-gpu.yaml
 
 # Check if webhook modified the request
 kubectl get pod test-medium-gpu -o jsonpath='{.metadata.annotations}' | jq
@@ -83,7 +91,7 @@ kubectl get pods -n gpu-webhook
 kubectl logs -n gpu-webhook -l app=gpu-webhook --tail=20
 
 # 3. Create a test deployment
-kubectl apply -f test-pods/test-deployment.yaml
+kubectl apply -f manifests/test-pods/test-deployment.yaml
 kubectl get pods -l app=gpu-test
 
 # 4. Check which pods had GPU fallback applied
@@ -105,7 +113,7 @@ kubectl get secret gpu-webhook-certs -n gpu-webhook
 
 # Regenerate certificates if needed
 cd webhook
-./generate-certs.sh
+./scripts/generate-certs.sh
 kubectl rollout restart deployment/gpu-webhook -n gpu-webhook
 cd ..
 ```
@@ -120,7 +128,7 @@ kubectl get pods -n gpu-operator
 kubectl get nodes --show-labels | grep "mig"
 
 # Reapply MIG configuration
-./configure-mig-profiles.sh
+./scripts/configure-mig-profiles.sh
 ```
 
 ### Issue: Pods not being intercepted by webhook
@@ -140,15 +148,15 @@ kubectl logs -n gpu-webhook -l app=gpu-webhook -f
 ## Next Steps
 
 1. **Monitor webhook decisions**: `kubectl logs -n gpu-webhook -l app=gpu-webhook -f`
-2. **Create realistic workloads**: Modify test manifests in `test-pods/`
+2. **Create realistic workloads**: Modify test manifests in `manifests/test-pods/`
 3. **Experiment with GPU exhaustion**: Deploy many pods to see fallback in action
-4. **Extend webhook logic**: Edit `webhook/main.go` to add custom rules
+4. **Extend webhook logic**: Edit `webhook/cmd/main.go` to add custom rules
 
 ## Cleanup
 
 ```bash
 # Remove test workloads
-kubectl delete -f test-pods/ --ignore-not-found
+kubectl delete -f manifests/test-pods/ --ignore-not-found
 
 # Delete entire cluster
 kind delete cluster --name gpu-sim-cluster

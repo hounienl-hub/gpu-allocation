@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Get script directory and webhook root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+WEBHOOK_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
+cd "$WEBHOOK_ROOT"
+
 echo "Building webhook Docker image..."
 docker build -t gpu-webhook:latest .
 
@@ -8,8 +14,8 @@ echo "Loading image into kind cluster..."
 kind load docker-image gpu-webhook:latest --name gpu-sim-cluster
 
 echo "Generating certificates..."
-chmod +x generate-certs.sh
-./generate-certs.sh
+chmod +x "$SCRIPT_DIR/generate-certs.sh"
+"$SCRIPT_DIR/generate-certs.sh"
 
 echo "Deploying webhook to Kubernetes..."
 kubectl apply -f deploy/00-namespace.yaml

@@ -1,8 +1,12 @@
 #!/bin/bash
 set -e
 
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
 echo "Creating kind cluster..."
-kind create cluster --config kind-gpu-cluster.yaml
+kind create cluster --config "$PROJECT_ROOT/config/kind-gpu-cluster.yaml"
 
 echo "Waiting for nodes to be ready..."
 kubectl wait --for=condition=Ready nodes --all --timeout=300s
@@ -10,7 +14,7 @@ kubectl wait --for=condition=Ready nodes --all --timeout=300s
 echo "Installing fake-gpu-operator..."
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator \
   --namespace gpu-operator --create-namespace \
-  --values fake-gpu-values.yaml \
+  --values "$PROJECT_ROOT/config/fake-gpu-values.yaml" \
   --wait
 
 echo "Labeling nodes for GPU simulation..."
@@ -36,7 +40,7 @@ echo "Waiting for fake-gpu-operator pods to be ready..."
 kubectl wait --for=condition=Ready pods -n gpu-operator --all --timeout=300s
 
 echo "Configuring MIG profiles on nodes..."
-./configure-mig-profiles.sh
+"$SCRIPT_DIR/configure-mig-profiles.sh"
 
 echo "Cluster setup complete!"
 echo ""

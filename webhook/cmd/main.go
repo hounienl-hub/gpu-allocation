@@ -146,6 +146,93 @@ func (w *GPUAllocationWebhook) handleMutate(ar admissionv1.AdmissionReview) *adm
 				modified = true
 			}
 		}
+
+		// Check for large GPU request (3g.30gb)
+		if qty, exists := container.Resources.Requests["nvidia.com/mig-3g.30gb"]; exists && !qty.IsZero() {
+			klog.Infof("Pod %s/%s requests 3g.30gb MIG", pod.Namespace, pod.Name)
+
+			// Check if 3g.30gb is available
+			available, err := w.checkMIGAvailability("nvidia.com/mig-3g.30gb")
+			if err != nil {
+				klog.Errorf("Error checking MIG availability: %v", err)
+			}
+
+			if !available {
+				// Try fallback chain: 3g.30gb -> 2g.20gb -> 1g.10gb -> gpu
+				fallback2g, _ := w.checkMIGAvailability("nvidia.com/mig-2g.20gb")
+				fallback1g, _ := w.checkMIGAvailability("nvidia.com/mig-1g.10gb")
+
+				// Determine fallback target
+				fallbackResource := ""
+				fallbackLabel := ""
+
+				if fallback2g {
+					fallbackResource = "nvidia.com/mig-2g.20gb"
+					fallbackLabel = "3g.30gb->2g.20gb"
+					klog.Infof("3g.30gb not available, falling back to 2g.20gb for pod %s/%s", pod.Namespace, pod.Name)
+				} else if fallback1g {
+					fallbackResource = "nvidia.com/mig-1g.10gb"
+					fallbackLabel = "3g.30gb->1g.10gb"
+					klog.Infof("3g.30gb and 2g.20gb not available, falling back to 1g.10gb for pod %s/%s", pod.Namespace, pod.Name)
+				} else {
+					fallbackResource = "nvidia.com/gpu"
+					fallbackLabel = "3g.30gb->gpu"
+					klog.Infof("3g.30gb, 2g.20gb, and 1g.10gb not available, falling back to basic GPU for pod %s/%s", pod.Namespace, pod.Name)
+				}
+
+				// Create patch to replace 3g.30gb with fallback resource
+				// Escape "/" in resource names for JSON patch
+				escapedFallback := fallbackResource
+				if fallbackResource == "nvidia.com/gpu" {
+					escapedFallback = "nvidia.com~1gpu"
+				} else if fallbackResource == "nvidia.com/mig-1g.10gb" {
+					escapedFallback = "nvidia.com~1mig-1g.10gb"
+				} else if fallbackResource == "nvidia.com/mig-2g.20gb" {
+					escapedFallback = "nvidia.com~1mig-2g.20gb"
+				}
+
+				patches = append(patches, map[string]interface{}{
+					"op":   "remove",
+					"path": fmt.Sprintf("/spec/containers/%d/resources/requests/nvidia.com~1mig-3g.30gb", containerIdx),
+				})
+				patches = append(patches, map[string]interface{}{
+					"op":    "add",
+					"path":  fmt.Sprintf("/spec/containers/%d/resources/requests/%s", containerIdx, escapedFallback),
+					"value": qty.String(),
+				})
+
+				// Also patch limits if they exist
+				if container.Resources.Limits != nil {
+					if limitQty, limitExists := container.Resources.Limits["nvidia.com/mig-3g.30gb"]; limitExists {
+						patches = append(patches, map[string]interface{}{
+							"op":   "remove",
+							"path": fmt.Sprintf("/spec/containers/%d/resources/limits/nvidia.com~1mig-3g.30gb", containerIdx),
+						})
+						patches = append(patches, map[string]interface{}{
+							"op":    "add",
+							"path":  fmt.Sprintf("/spec/containers/%d/resources/limits/%s", containerIdx, escapedFallback),
+							"value": limitQty.String(),
+						})
+					}
+				}
+
+				// Add annotation to indicate the fallback occurred
+				if pod.Annotations == nil {
+					patches = append(patches, map[string]interface{}{
+						"op":    "add",
+						"path":  "/metadata/annotations",
+						"value": map[string]string{},
+					})
+				}
+				patches = append(patches, map[string]interface{}{
+					"op":    "add",
+					"path":  "/metadata/annotations/gpu-webhook.k8s.io~1fallback",
+					"value": fallbackLabel,
+				})
+
+				modified = true
+			}
+		}
 	}
 
 	response := &admissionv1.AdmissionResponse{

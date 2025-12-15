@@ -46,11 +46,12 @@ The admission webhook intercepts Pod, Job, and Deployment creation requests and:
 ### 1. Deploy the Complete Stack
 
 ```bash
-# Make scripts executable
-chmod +x setup-cluster.sh configure-mig-profiles.sh
+# Using Make (recommended)
+make setup
 
-# Create and configure the cluster
-./setup-cluster.sh
+# Or manually:
+chmod +x scripts/setup-cluster.sh scripts/configure-mig-profiles.sh
+./scripts/setup-cluster.sh
 ```
 
 This will:
@@ -62,9 +63,14 @@ This will:
 ### 2. Build and Deploy the Webhook
 
 ```bash
+# Using Make (recommended)
+make deploy-webhook
+
+# Or manually:
 cd webhook
-chmod +x build-and-deploy.sh generate-certs.sh
-./build-and-deploy.sh
+chmod +x scripts/*.sh
+./scripts/init-go-module.sh
+./scripts/build-and-deploy.sh
 cd ..
 ```
 
@@ -97,7 +103,7 @@ kubectl get pods -n gpu-webhook
 
 ```bash
 # Deploy a pod requesting 2g.20gb MIG
-kubectl apply -f test-pods/test-medium-gpu.yaml
+kubectl apply -f manifests/test-pods/test-medium-gpu.yaml
 
 # Check if webhook modified the request
 kubectl get pod test-medium-gpu -o yaml | grep -A5 annotations
@@ -112,7 +118,7 @@ If no 2g.20gb MIGs are available, the webhook will:
 
 ```bash
 # Deploy multiple replicas requesting medium GPUs
-kubectl apply -f test-pods/test-deployment.yaml
+kubectl apply -f manifests/test-pods/test-deployment.yaml
 
 # Watch pods being scheduled
 kubectl get pods -l app=gpu-test -w
@@ -128,7 +134,7 @@ GPU-REQUEST:.spec.containers[0].resources.requests
 
 ```bash
 # Create a job with GPU requirement
-kubectl apply -f test-pods/test-job.yaml
+kubectl apply -f manifests/test-pods/test-job.yaml
 
 # Check job status
 kubectl get jobs
@@ -218,20 +224,21 @@ kubectl logs -n gpu-operator -l app.kubernetes.io/name=fake-gpu-operator
 ```bash
 # Regenerate certificates
 cd webhook
-./generate-certs.sh
+./scripts/generate-certs.sh
 
 # Reapply webhook config
 kubectl apply -f deploy/04-webhook-config-patched.yaml
 
 # Restart webhook pods
 kubectl rollout restart deployment/gpu-webhook -n gpu-webhook
+cd ..
 ```
 
 ## Cleanup
 
 ```bash
 # Delete test workloads
-kubectl delete -f test-pods/
+kubectl delete -f manifests/test-pods/
 
 # Delete webhook
 kubectl delete -f webhook/deploy/
@@ -283,14 +290,14 @@ kind delete cluster --name gpu-sim-cluster
 
 To add a large node pool with full 7g.70gb MIGs:
 
-1. Add nodes to `kind-gpu-cluster.yaml`:
+1. Add nodes to `config/kind-gpu-cluster.yaml`:
    ```yaml
    - role: worker
      labels:
        node-pool: large
    ```
 
-2. Add to `fake-gpu-values.yaml`:
+2. Add to `config/fake-gpu-values.yaml`:
    ```yaml
    large:
      gpuProduct: NVIDIA-H200
@@ -298,11 +305,11 @@ To add a large node pool with full 7g.70gb MIGs:
      gpuMemory: 71680
    ```
 
-3. Configure MIG profile in a new script or extend `configure-mig-profiles.sh`
+3. Configure MIG profile in a new script or extend `scripts/configure-mig-profiles.sh`
 
 ### Customize Webhook Logic
 
-Edit `webhook/main.go` to:
+Edit `webhook/cmd/main.go` to:
 - Add support for other MIG sizes (3g.40gb, 7g.80gb)
 - Implement multi-tier fallback (2g → 1g → fail)
 - Add custom scheduling hints based on node labels

@@ -53,11 +53,11 @@ mig-configs:
 done
 
 # Configure MIG profiles for medium node
-# Medium node: 3x 2g.20gb + 1x 1g.10gb MIGs per GPU, 4 GPUs per node
+# Medium node: 2x 2g.20gb + 1x 3g.30gb MIGs per GPU, 4 GPUs per node
 for node in $(kubectl get nodes -l node-pool=medium -o jsonpath='{.items[*].metadata.name}'); do
   echo "Configuring MIG profile for medium node: $node"
 
-  # MIG configuration with 3x 2g.20gb + 1x 1g.10gb per GPU for 4 GPUs
+  # MIG configuration with 2x 2g.20gb + 1x 3g.30gb per GPU for 4 GPUs
   kubectl annotate node $node run.ai/mig.config='version: v1
 mig-configs:
   selected:
@@ -66,29 +66,25 @@ mig-configs:
     mig-devices:
     - 2g.20gb
     - 2g.20gb
-    - 2g.20gb
-    - 1g.10gb
+    - 3g.30gb
   - devices: [1]
     mig-enabled: true
     mig-devices:
     - 2g.20gb
     - 2g.20gb
-    - 2g.20gb
-    - 1g.10gb
+    - 3g.30gb
   - devices: [2]
     mig-enabled: true
     mig-devices:
     - 2g.20gb
     - 2g.20gb
-    - 2g.20gb
-    - 1g.10gb
+    - 3g.30gb
   - devices: [3]
     mig-enabled: true
     mig-devices:
     - 2g.20gb
     - 2g.20gb
-    - 2g.20gb
-    - 1g.10gb' --overwrite
+    - 3g.30gb' --overwrite
 done
 
 echo "MIG profiles configured successfully"

@@ -3,6 +3,10 @@ set -e
 
 # Script to generate TLS certificates for the webhook
 
+# Get script directory and webhook root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+WEBHOOK_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
 NAMESPACE="gpu-webhook"
 SERVICE_NAME="gpu-webhook"
 SECRET_NAME="gpu-webhook-certs"
@@ -73,13 +77,13 @@ kubectl create secret tls $SECRET_NAME \
 CA_BUNDLE=$(cat $CERT_DIR/ca.crt | base64 | tr -d '\n')
 
 # Update webhook configuration with CA bundle
-sed "s/CA_BUNDLE_PLACEHOLDER/${CA_BUNDLE}/g" deploy/04-webhook-config.yaml > $CERT_DIR/webhook-config-patched.yaml
+sed "s/CA_BUNDLE_PLACEHOLDER/${CA_BUNDLE}/g" "$WEBHOOK_ROOT/deploy/04-webhook-config.yaml" > $CERT_DIR/webhook-config-patched.yaml
 
 echo "CA Bundle ready for webhook configuration"
 echo "Updated webhook config saved to: $CERT_DIR/webhook-config-patched.yaml"
 
 # Save the patched config for deployment
-cp $CERT_DIR/webhook-config-patched.yaml deploy/04-webhook-config-patched.yaml
+cp $CERT_DIR/webhook-config-patched.yaml "$WEBHOOK_ROOT/deploy/04-webhook-config-patched.yaml"
 
 # Clean up temporary directory (keep for debugging)
 echo "Certificate files in: $CERT_DIR"
