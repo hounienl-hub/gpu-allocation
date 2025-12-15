@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-webhook
+  namespace: gpu-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-webhook
+  template:
+    metadata:
+      labels:
+        app: gpu-webhook
+    spec:
+      serviceAccountName: gpu-webhook
+      containers:
+      - name: webhook
+        image: gpu-webhook:latest
+        imagePullPolicy: Never  # For local kind cluster
+        ports:
+        - containerPort: 8443
+          name: https
+        env:
+        - name: PORT
+          value: "8443"
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: gpu-webhook-certs

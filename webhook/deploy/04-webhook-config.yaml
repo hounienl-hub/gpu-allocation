@@ -1,0 +1,25 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: gpu-allocation-webhook
+webhooks:
+- name: gpu-allocation.k8s.io
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: gpu-webhook
+      namespace: gpu-webhook
+      path: "/mutate"
+    caBundle: CA_BUNDLE_PLACEHOLDER
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+  sideEffects: None
+  failurePolicy: Ignore
+  namespaceSelector:
+    matchExpressions:
+    - key: gpu-webhook
+      operator: NotIn
+      values: ["disabled"]

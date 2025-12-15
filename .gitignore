@@ -1,0 +1,15 @@
+# Exclude cloned fake-gpu-operator repository
+fake-gpu-operator/
+
+# Exclude Go build artifacts
+webhook/go.sum
+webhook/gpu-webhook
+
+# Exclude generated webhook certificates
+webhook/deploy/04-webhook-config-patched.yaml
+
+# Exclude temp files
+*.swp
+*.swo
+*~
+.DS_Store

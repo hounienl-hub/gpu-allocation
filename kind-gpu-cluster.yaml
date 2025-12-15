@@ -1,0 +1,35 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: gpu-sim-cluster
+nodes:
+  # Control plane node
+  - role: control-plane
+    kubeadmConfigPatches:
+    - |
+      kind: InitConfiguration
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "ingress-ready=true"
+    extraPortMappings:
+    - containerPort: 80
+      hostPort: 80
+      protocol: TCP
+    - containerPort: 443
+      hostPort: 443
+      protocol: TCP
+
+  # Small GPU nodes (2 nodes with 4x H200 7g70gb each, 7x 1g10gb MIGs per card)
+  - role: worker
+    labels:
+      node-pool: small
+  - role: worker
+    labels:
+      node-pool: small
+
+  # Medium GPU nodes (2 nodes with 4x H200 each, 3x 2g20gb + 1x 1g10gb MIGs per card)
+  - role: worker
+    labels:
+      node-pool: medium
+  - role: worker
+    labels:
+      node-pool: medium

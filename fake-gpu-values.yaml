@@ -1,0 +1,12 @@
+topology:
+  nodePoolLabelKey: run.ai/simulated-gpu-node-pool
+  migStrategy: mixed
+  nodePools:
+    small:
+      gpuProduct: NVIDIA-H200
+      gpuCount: 4
+      gpuMemory: 71680  # 70GB in MiB
+    medium:
+      gpuProduct: NVIDIA-H200
+      gpuCount: 4
+      gpuMemory: 71680  # 70GB in MiB
