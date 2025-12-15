@@ -547,7 +547,255 @@ kubectl logs -n gpu-webhook -l app=gpu-webhook
 
 ## 高级话题
 
-### Q7: 如何扩展 Webhook 支持更多 GPU 类型？
+### Q7: Mixed MIG 配置在真实 NVIDIA 环境中能否正常工作？
+
+**问题**: 解释一下 mixed MIGs 的设置在真的 NVIDIA 的状况会成功的提供对的 MIG or downgrade MIG?
+
+**答案**: ✅ **Mixed MIG 配置完全支持，Webhook 在真实环境中能够成功提供正确的 MIG 或自动降级！**
+
+### Mixed MIG 配置的可行性
+
+**你当前的配置** (2× 2g.20gb + 1× 3g.30gb per card):
+
+```
+计算验证：
+- 2g.20gb × 2 = 40GB memory + 4 compute slices
+- 3g.30gb × 1 = 30GB memory + 3 compute slices
+- 总计 = 70GB memory + 7 compute slices ✅
+
+NVIDIA H200 70GB 规格：7 compute slices, 70GB memory
+结论：配置合法且可行！
+```
+
+NVIDIA MIG **完全支持**在同一张 GPU 卡上混合不同大小的 MIG 实例。这是 MIG 设计的核心特性。
+
+### 真实环境中的工作场景
+
+#### ✅ 场景 1: 成功提供正确的 MIG
+
+```yaml
+# 用户请求
+resources:
+  requests:
+    nvidia.com/mig-3g.30gb: 1
+```
+
+**Webhook 流程**:
+1. 查询集群节点 `node.status.allocatable`
+2. 发现 `nvidia.com/mig-3g.30gb: "4"` (存在)
+3. **决策**: 资源类型存在 → 不修改请求
+4. **交给 Scheduler**: 查找有可用 3g.30gb 的节点
+5. **结果**: Pod 成功获得 3g.30gb MIG ✅
+
+#### ✅ 场景 2: 智能降级到较小 MIG
+
+**情况**: 集群中没有配置 3g.30gb MIG
+
+```yaml
+# 用户请求
+resources:
+  requests:
+    nvidia.com/mig-3g.30gb: 1
+```
+
+**Webhook 降级链**: 3g.30gb → 2g.20gb → 1g.10gb → gpu
+
+1. 检查 `nvidia.com/mig-3g.30gb` → 不存在
+2. 检查 `nvidia.com/mig-2g.20gb: "8"` → ✅ 存在
+3. **修改请求**为 `nvidia.com/mig-2g.20gb: 1`
+4. **添加注解**: `gpu-webhook.k8s.io/fallback: "3g.30gb->2g.20gb"`
+5. **结果**: Pod 获得 2g.20gb MIG ✅
+
+#### ⚠️ 场景 3: Webhook 的设计限制
+
+**重要理解**: Webhook 只检查**资源类型是否存在**，不检查**实际可用数量**
+
+```
+集群状态：
+Medium Node:
+  nvidia.com/mig-3g.30gb:
+    Allocatable: 4  (总容量 - Webhook 看到这个)
+    Allocated: 4    (已使用 - Webhook 看不到)
+    Available: 0    (可用 = 0！- Webhook 看不到)
+```
+
+**Webhook 行为**:
+- 查询到 `allocatable = 4` (>= 1)
+- **判断**: 集群有这种类型的 MIG ✅
+- **不修改请求**（这是关键！）
+- 交给 Scheduler 处理
+
+**Scheduler 行为**:
+- 尝试找可用的 3g.30gb
+- 发现所有都在使用中
+- **Pod 进入 Pending 状态** ⚠️
+
+**这是正确的设计！原因**:
+
+### 为什么 Webhook 不检查实际可用量？
+
+#### 1️⃣ 职责分离 (Separation of Concerns)
+
+```
+┌─────────────────────────────────────────┐
+│  Kubernetes 架构设计原则                  │
+├─────────────────────────────────────────┤
+│                                          │
+│  Admission Webhook (准入阶段):           │
+│  ✅ 资源类型转换 (3g → 2g → 1g)          │
+│  ✅ 验证请求合法性                        │
+│  ✅ 添加默认值和注解                      │
+│  ❌ 不应该：调度决策、资源分配             │
+│                                          │
+├─────────────────────────────────────────┤
+│                                          │
+│  Scheduler (调度阶段):                   │
+│  ✅ 实时资源可用性检查                    │
+│  ✅ 节点选择算法                          │
+│  ✅ 资源绑定和分配                        │
+│  ✅ 处理资源不足 (Pending)                │
+│                                          │
+└─────────────────────────────────────────┘
+```
+
+#### 2️⃣ Race Condition (竞态条件)
+
+```
+时间线：
+T0: Webhook 检查 → 3g.30gb available = 1 ✅
+T1: 另一个 Pod 并发创建 → 使用了那个 3g.30gb
+T2: 当前 Pod 到达 Scheduler → available = 0 ❌
+T3: Pod Pending (资源不足)
+```
+
+即使 Webhook 计算了可用量，在到达 Scheduler 之前，资源可能已被其他 Pod 使用。这是分布式系统的固有特性。
+
+#### 3️⃣ 性能考虑
+
+计算实际可用量需要：
+```go
+// 每个 Pod 创建时都要执行
+1. 列出所有节点 (kubectl get nodes)
+2. 列出所有 Pods (kubectl get pods --all-namespaces)
+3. 遍历每个 Pod，累加资源使用
+4. 计算: available = allocatable - allocated
+```
+
+对于大型集群 (1000+ nodes, 10000+ pods):
+- 每次 Pod 创建延迟 **5-10 秒**
+- API Server 负载暴增
+- **不可接受的性能损耗**
+
+#### 4️⃣ Webhook 的真正价值
+
+**Webhook 的设计目标**: 跨环境的资源类型适配
+
+```
+多数据中心示例：
+
+DC-A (50 nodes):
+  - H200 GPU: 支持 3g.30gb, 2g.20gb, 1g.10gb
+
+DC-B (100 nodes):
+  - A100 GPU: 只支持 2g.20gb, 1g.10gb
+
+DC-C (200 nodes):
+  - V100 GPU: 不支持 MIG，只有 nvidia.com/gpu
+```
+
+**用户提交同一个 YAML**:
+```yaml
+resources:
+  requests:
+    nvidia.com/mig-3g.30gb: 1
+```
+
+**Webhook 的智能适配**:
+```
+DC-A: 保持 3g.30gb → ✅ H200 成功调度
+DC-B: 降级 → 2g.20gb → ✅ A100 成功调度
+DC-C: 降级 → gpu → ✅ V100 成功调度
+```
+
+**核心优势**:
+- ✅ 用户无需了解集群 GPU 配置
+- ✅ 同一 YAML 多环境运行
+- ✅ 自动适配可用的 GPU 类型
+- ✅ 提高资源利用率
+
+### 真实环境最佳实践
+
+#### 方案 1: 使用 Node Selector
+
+```yaml
+# 为不同 MIG 配置的节点打标签
+apiVersion: v1
+kind: Node
+metadata:
+  name: gpu-node-large
+  labels:
+    gpu.nvidia.com/mig-profile: "3g.30gb"
+```
+
+```yaml
+# Pod 明确指定节点类型
+apiVersion: v1
+kind: Pod
+metadata:
+  name: large-training
+spec:
+  nodeSelector:
+    gpu.nvidia.com/mig-profile: "3g.30gb"
+  containers:
+  - name: trainer
+    resources:
+      requests:
+        nvidia.com/mig-3g.30gb: 1
+```
+
+#### 方案 2: 使用 PriorityClass
+
+```yaml
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority-gpu
+value: 1000000
+preemptionPolicy: PreemptLowerPriority
+```
+
+高优先级 Pod 可以驱逐低优先级 Pod 以获取资源。
+
+#### 方案 3: Cluster Autoscaler
+
+配合云环境的自动扩容，当资源不足时自动创建新节点。
+
+### 🎯 总结
+
+**Mixed MIG 配置在真实 NVIDIA 环境中的表现**:
+
+✅ **完全支持**: NVIDIA MIG 允许混合配置（2× 2g.20gb + 1× 3g.30gb）
+
+✅ **Webhook 能够**:
+- 检测集群中存在的 MIG 类型
+- 智能降级到可用的 MIG 类型
+- 提供跨环境的资源适配
+
+✅ **Webhook 不会**:
+- 检查实时可用数量（这是 Scheduler 的职责）
+- 保证资源立即可用（可能 Pending）
+
+✅ **这是正确的设计**:
+- 符合 Kubernetes 架构原则
+- 避免 Race Condition
+- 保证性能
+- 职责清晰分离
+
+**配合使用 Node Selector、PriorityClass、Cluster Autoscaler 可以构建完整的生产级 GPU 调度系统！**
+
+---
+
+### Q9: 如何扩展 Webhook 支持更多 GPU 类型？
 
 **答案**: 修改降级逻辑以支持更多资源类型。
 
@@ -574,7 +822,7 @@ if qty, exists := container.Resources.Requests["nvidia.com/mig-3g.40gb"]; exists
 }
 ```
 
-### Q8: 如何在生产环境监控 Webhook？
+### Q10: 如何在生产环境监控 Webhook？
 
 **建议的监控方案**:
 
@@ -607,7 +855,7 @@ if qty, exists := container.Resources.Requests["nvidia.com/mig-3g.40gb"]; exists
        summary: "High GPU fallback rate detected"
    ```
 
-### Q9: Webhook 会影响集群性能吗？
+### Q11: Webhook 会影响集群性能吗？
 
 **答案**: 影响很小。
 

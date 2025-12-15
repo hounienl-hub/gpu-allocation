@@ -41,6 +41,74 @@ The admission webhook intercepts Pod, Job, and Deployment creation requests and:
 - Helm 3.x
 - OpenSSL (for webhook certificate generation)
 
+## Using Make
+
+This project includes a Makefile for streamlined operations. All commands should be run from the project root directory.
+
+### Available Make Targets
+
+View all available commands:
+```bash
+make help
+```
+
+**Output:**
+```
+Available targets:
+  all                   Complete setup and deployment
+  clean                 Delete the entire cluster
+  clean-workloads       Delete test workloads
+  deploy-webhook        Build and deploy the GPU allocation webhook
+  logs-operator         View fake-gpu-operator logs
+  logs-webhook          View webhook logs
+  setup                 Setup the Kind cluster with fake-gpu-operator
+  test                  Deploy test workloads
+  verify                Verify the setup
+```
+
+### Common Workflows
+
+**1. Complete Setup (First Time)**
+```bash
+make all        # setup + deploy-webhook + verify
+```
+
+**2. Development Workflow**
+```bash
+make setup             # Create cluster
+make deploy-webhook    # Build and deploy webhook
+make verify            # Check everything is running
+make test              # Deploy test pods
+make logs-webhook      # Watch webhook logs
+```
+
+**3. Testing Workflow**
+```bash
+make test              # Deploy test pods
+make logs-webhook      # Watch webhook decisions
+make clean-workloads   # Clean up test pods
+```
+
+**4. Complete Cleanup**
+```bash
+make clean-workloads   # Delete test pods first
+make clean             # Delete entire cluster
+```
+
+### Make Target Details
+
+| Target | Description | What it does |
+|--------|-------------|--------------|
+| `make setup` | Create and configure cluster | Creates Kind cluster, installs fake-gpu-operator, configures MIG profiles |
+| `make deploy-webhook` | Deploy webhook | Builds Docker image, generates certificates, deploys webhook to cluster |
+| `make verify` | Verify installation | Shows node status, GPU resources, operator pods, webhook pods |
+| `make test` | Run test workloads | Deploys test pods and shows their status |
+| `make logs-webhook` | Stream webhook logs | Follows webhook logs in real-time (Ctrl+C to exit) |
+| `make logs-operator` | Stream operator logs | Follows fake-gpu-operator logs in real-time |
+| `make clean-workloads` | Delete test pods | Removes all test workloads |
+| `make clean` | Delete cluster | Completely removes the Kind cluster |
+| `make all` | Complete setup | Runs setup + deploy-webhook + verify |
+
 ## Quick Start
 
 ### 1. Deploy the Complete Stack
@@ -99,47 +167,242 @@ kubectl get pods -n gpu-webhook
 
 ## Testing
 
-### Test Pod with Medium GPU Request
+This project includes comprehensive test cases to validate webhook functionality across different scenarios.
+
+### Quick Test (Using Make)
 
 ```bash
-# Deploy a pod requesting 2g.20gb MIG
-kubectl apply -f manifests/test-pods/test-medium-gpu.yaml
+# Deploy test workloads
+make test
 
-# Check if webhook modified the request
-kubectl get pod test-medium-gpu -o yaml | grep -A5 annotations
-kubectl get pod test-medium-gpu -o yaml | grep -A5 resources
+# Watch webhook logs
+make logs-webhook
+
+# Clean up
+make clean-workloads
 ```
 
-If no 2g.20gb MIGs are available, the webhook will:
-- Change the request from `nvidia.com/mig-2g.20gb: 1` to `nvidia.com/mig-1g.10gb: 1`
-- Add annotation: `gpu-webhook.k8s.io/fallback: "2g.20gb->1g.10gb"`
+### Test Cases
 
-### Test with Deployment
+#### Test 1: Single Pod with 2g.20gb MIG Request
+
+**What it tests**: Basic fallback when 2g.20gb is unavailable
 
 ```bash
-# Deploy multiple replicas requesting medium GPUs
+# Deploy test pod
+kubectl apply -f manifests/test-pods/test-medium-gpu.yaml
+
+# Check webhook modification
+kubectl get pod test-medium-gpu -o jsonpath='{.metadata.annotations.gpu-webhook\.k8s\.io/fallback}'
+# Expected output: "2g.20gb->gpu" or "2g.20gb->1g.10gb"
+
+# Check actual resource assigned
+kubectl get pod test-medium-gpu -o jsonpath='{.spec.containers[0].resources.requests}'
+# Expected output: {"nvidia.com/gpu":"1"} or {"nvidia.com/mig-1g.10gb":"1"}
+
+# View webhook decision logs
+kubectl logs -n gpu-webhook -l app=gpu-webhook --tail=20
+```
+
+#### Test 2: Multiple Pods with Deployment
+
+**What it tests**: Webhook handles multiple pods consistently
+
+```bash
+# Deploy 5 replicas
 kubectl apply -f manifests/test-pods/test-deployment.yaml
 
 # Watch pods being scheduled
 kubectl get pods -l app=gpu-test -w
 
-# Check which pods were modified by the webhook
+# Check fallback decisions for all pods
 kubectl get pods -l app=gpu-test -o custom-columns=\
 NAME:.metadata.name,\
-FALLBACK:.metadata.annotations.gpu-webhook\\.k8s\\.io/fallback,\
-GPU-REQUEST:.spec.containers[0].resources.requests
+STATUS:.status.phase,\
+FALLBACK:.metadata.annotations.gpu-webhook\\.k8s\\.io/fallback
+
+# View resource distribution
+kubectl get pods -l app=gpu-test -o json | \
+  jq -r '.items[] | "\(.metadata.name): \(.spec.containers[0].resources.requests)"'
 ```
 
-### Test with Job
+#### Test 3: Large GPU (3g.30gb) with Multi-tier Fallback
+
+**What it tests**: Full fallback chain (3g.30gb → 2g.20gb → 1g.10gb → gpu)
 
 ```bash
-# Create a job with GPU requirement
+# Deploy pods requesting 3g.30gb
+kubectl apply -f manifests/test-pods/test-large-gpu.yaml
+
+# Check fallback annotations
+kubectl get pods -l app=gpu-test-large -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.gpu-webhook\.k8s\.io/fallback}{"\n"}{end}'
+# Expected output: test-large-gpu	3g.30gb->2g.20gb (or ->1g.10gb or ->gpu)
+
+# View webhook decision process
+kubectl logs -n gpu-webhook -l app=gpu-webhook | grep "3g.30gb"
+```
+
+#### Test 4: Resource Exhaustion Test
+
+**What it tests**: Webhook behavior when resources are fully allocated
+
+```bash
+# Deploy 10 pods to exhaust resources
+kubectl apply -f manifests/test-pods/test-resource-exhaustion.yaml
+
+# Check how many pods are running vs pending
+kubectl get pods -l app=gpu-exhaustion-test -o wide
+
+# View pending reasons
+kubectl describe pods -l app=gpu-exhaustion-test | grep -A 5 "Events:"
+
+# Check node resource allocation
+kubectl describe nodes | grep -A 10 "Allocated resources:"
+```
+
+#### Test 5: Job-based GPU Workload
+
+**What it tests**: Webhook works with Kubernetes Jobs
+
+```bash
+# Create a job requesting GPU
 kubectl apply -f manifests/test-pods/test-job.yaml
 
 # Check job status
 kubectl get jobs
+
+# View job pod status
+kubectl get pods -l job-name=test-gpu-job
+
+# Check job logs
 kubectl logs job/test-gpu-job
 ```
+
+### Monitoring Webhook Decisions
+
+#### Real-time Webhook Logs
+
+```bash
+# Follow webhook logs (recommended during testing)
+kubectl logs -n gpu-webhook -l app=gpu-webhook -f
+
+# Expected log format:
+# I1215 14:11:58.443350 1 main.go:60] Reviewing pod: default/test-large-gpu
+# I1215 14:11:58.443450 1 main.go:152] Pod default/test-large-gpu requests 3g.30gb MIG
+# I1215 14:11:58.476289 1 main.go:180] 3g.30gb, 2g.20gb, and 1g.10gb not available, falling back to basic GPU
+# I1215 14:11:58.476742 1 main.go:257] Applied fallback patch to pod default/test-large-gpu
+```
+
+#### Webhook Decision Summary
+
+```bash
+# View all pods modified by webhook
+kubectl get pods --all-namespaces \
+  -o jsonpath='{range .items[?(@.metadata.annotations.gpu-webhook\.k8s\.io/fallback)]}{.metadata.namespace}{"/"}{.metadata.name}{"\t"}{.metadata.annotations.gpu-webhook\.k8s\.io/fallback}{"\n"}{end}'
+```
+
+#### Node Resource Status
+
+```bash
+# Check GPU resource allocation on nodes
+kubectl get nodes -o custom-columns=\
+NAME:.metadata.name,\
+POOL:.metadata.labels.node-pool,\
+MIG-1g:.status.capacity.nvidia\\.com/mig-1g\\.10gb,\
+MIG-2g:.status.capacity.nvidia\\.com/mig-2g\\.20gb,\
+MIG-3g:.status.capacity.nvidia\\.com/mig-3g\\.30gb,\
+GPU:.status.capacity.nvidia\\.com/gpu
+```
+
+### Test Results Validation
+
+#### Verify Fallback Annotation
+
+```bash
+POD_NAME="test-medium-gpu"
+
+# Check if webhook added fallback annotation
+kubectl get pod $POD_NAME \
+  -o jsonpath='{.metadata.annotations.gpu-webhook\.k8s\.io/fallback}'
+
+# If empty output: Pod used original resource (no fallback needed)
+# If shows "2g.20gb->1g.10gb": Successfully fell back to smaller MIG
+# If shows "2g.20gb->gpu": Fell back to basic GPU
+```
+
+#### Verify Resource Modification
+
+```bash
+POD_NAME="test-medium-gpu"
+
+# Check original request (from kubectl apply)
+grep "nvidia.com" manifests/test-pods/test-medium-gpu.yaml
+
+# Check actual assigned resource
+kubectl get pod $POD_NAME \
+  -o jsonpath='{.spec.containers[0].resources.requests}' | jq .
+
+# Compare: If different, webhook successfully modified the request
+```
+
+### Cleanup After Testing
+
+```bash
+# Delete all test workloads
+kubectl delete -f manifests/test-pods/ --ignore-not-found
+
+# Or use make
+make clean-workloads
+
+# To reset everything completely
+make clean
+```
+
+### Expected Test Outcomes
+
+| Test Case | Original Request | Expected Fallback | Final Resource |
+|-----------|------------------|-------------------|----------------|
+| test-medium-gpu | nvidia.com/mig-2g.20gb | 2g→1g or 2g→gpu | mig-1g.10gb or gpu |
+| test-large-gpu | nvidia.com/mig-3g.30gb | 3g→2g→1g→gpu | First available in chain |
+| test-deployment | nvidia.com/mig-2g.20gb | Same for all pods | Consistent across replicas |
+| test-resource-exhaustion | nvidia.com/mig-2g.20gb | Some running, some pending | Resource exhaustion validated |
+
+### Advanced Testing
+
+#### Test Concurrent Pod Creation
+
+```bash
+# Test webhook handling concurrent requests
+for i in {1..10}; do
+  kubectl run test-concurrent-$i --image=nvidia/cuda:11.8.0-base-ubuntu22.04 \
+    --overrides='{"spec":{"containers":[{"name":"test","image":"nvidia/cuda:11.8.0-base-ubuntu22.04","resources":{"requests":{"nvidia.com/mig-2g.20gb":"1"}}}]}}' &
+done
+
+# Wait for all to complete
+wait
+
+# Check results
+kubectl get pods -l run=test-concurrent -o custom-columns=\
+NAME:.metadata.name,\
+FALLBACK:.metadata.annotations.gpu-webhook\\.k8s\\.io/fallback,\
+STATUS:.status.phase
+```
+
+#### Test Webhook Performance
+
+```bash
+# Time webhook response
+time kubectl run perf-test --image=nginx \
+  --overrides='{"spec":{"containers":[{"name":"test","image":"nginx","resources":{"requests":{"nvidia.com/mig-2g.20gb":"1"}}}]}}'
+
+# Check webhook latency in logs
+kubectl logs -n gpu-webhook -l app=gpu-webhook | grep "Reviewing pod" | tail -5
+```
+
+For more detailed test documentation, see:
+- [docs/TEST_REPORT.md](docs/TEST_REPORT.md) - Complete test report
+- [docs/RESOURCE_EXHAUSTION_TEST.md](docs/RESOURCE_EXHAUSTION_TEST.md) - Resource exhaustion analysis
+- [docs/测试说明.md](docs/测试说明.md) - Chinese test documentation
 
 ## Webhook Behavior
 
