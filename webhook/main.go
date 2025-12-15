@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,16 +79,38 @@ func (w *GPUAllocationWebhook) handleMutate(ar admissionv1.AdmissionReview) *adm
 			}
 
 			if !available {
-				klog.Infof("2g.20gb not available, falling back to 1g.10gb for pod %s/%s", pod.Namespace, pod.Name)
+				// Check if 1g.10gb is available
+				fallback1g, _ := w.checkMIGAvailability("nvidia.com/mig-1g.10gb")
 
-				// Create patch to replace 2g.20gb with 1g.10gb
+				// Determine fallback target
+				fallbackResource := "nvidia.com/mig-1g.10gb"
+				fallbackLabel := "2g.20gb->1g.10gb"
+
+				if !fallback1g {
+					// Fall back to basic GPU if MIG not available
+					fallbackResource = "nvidia.com/gpu"
+					fallbackLabel = "2g.20gb->gpu"
+					klog.Infof("2g.20gb and 1g.10gb not available, falling back to basic GPU for pod %s/%s", pod.Namespace, pod.Name)
+				} else {
+					klog.Infof("2g.20gb not available, falling back to 1g.10gb for pod %s/%s", pod.Namespace, pod.Name)
+				}
+
+				// Create patch to replace 2g.20gb with fallback resource
+				// Escape "/" in resource names for JSON patch
+				escapedFallback := fallbackResource
+				if fallbackResource == "nvidia.com/gpu" {
+					escapedFallback = "nvidia.com~1gpu"
+				} else if fallbackResource == "nvidia.com/mig-1g.10gb" {
+					escapedFallback = "nvidia.com~1mig-1g.10gb"
+				}
+
 				patches = append(patches, map[string]interface{}{
 					"op":    "remove",
 					"path":  fmt.Sprintf("/spec/containers/%d/resources/requests/nvidia.com~1mig-2g.20gb", containerIdx),
 				})
 				patches = append(patches, map[string]interface{}{
 					"op":    "add",
-					"path":  fmt.Sprintf("/spec/containers/%d/resources/requests/nvidia.com~1mig-1g.10gb", containerIdx),
+					"path":  fmt.Sprintf("/spec/containers/%d/resources/requests/%s", containerIdx, escapedFallback),
 					"value": qty.String(),
 				})
 
@@ -100,7 +123,7 @@ func (w *GPUAllocationWebhook) handleMutate(ar admissionv1.AdmissionReview) *adm
 						})
 						patches = append(patches, map[string]interface{}{
 							"op":    "add",
-							"path":  fmt.Sprintf("/spec/containers/%d/resources/limits/nvidia.com~1mig-1g.10gb", containerIdx),
+							"path":  fmt.Sprintf("/spec/containers/%d/resources/limits/%s", containerIdx, escapedFallback),
 							"value": limitQty.String(),
 						})
 					}
@@ -117,7 +140,7 @@ func (w *GPUAllocationWebhook) handleMutate(ar admissionv1.AdmissionReview) *adm
 				patches = append(patches, map[string]interface{}{
 					"op":    "add",
 					"path":  "/metadata/annotations/gpu-webhook.k8s.io~1fallback",
-					"value": "2g.20gb->1g.10gb",
+					"value": fallbackLabel,
 				})
 
 				modified = true
@@ -151,7 +174,7 @@ func (w *GPUAllocationWebhook) handleMutate(ar admissionv1.AdmissionReview) *adm
 }
 
 func (w *GPUAllocationWebhook) checkMIGAvailability(resourceName string) (bool, error) {
-	nodes, err := w.clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+	nodes, err := w.clientset.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return false, err
 	}
@@ -167,7 +190,7 @@ func (w *GPUAllocationWebhook) checkMIGAvailability(resourceName string) (bool, 
 	return false, nil
 }
 
-func (w *GPUAllocationWebhook) serve(w http.ResponseWriter, r *http.Request) {
+func (wh *GPUAllocationWebhook) serve(w http.ResponseWriter, r *http.Request) {
 	var body []byte
 	if r.Body != nil {
 		if data, err := io.ReadAll(r.Body); err == nil {
@@ -192,7 +215,7 @@ func (w *GPUAllocationWebhook) serve(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 	} else {
-		reviewResponse = w.handleMutate(ar)
+		reviewResponse = wh.handleMutate(ar)
 	}
 
 	response := admissionv1.AdmissionReview{

@@ -13,43 +13,43 @@ mig-configs:
   - devices: [0]
     mig-enabled: true
     mig-devices:
-      0: 1g.10gb
-      1: 1g.10gb
-      2: 1g.10gb
-      3: 1g.10gb
-      4: 1g.10gb
-      5: 1g.10gb
-      6: 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
   - devices: [1]
     mig-enabled: true
     mig-devices:
-      0: 1g.10gb
-      1: 1g.10gb
-      2: 1g.10gb
-      3: 1g.10gb
-      4: 1g.10gb
-      5: 1g.10gb
-      6: 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
   - devices: [2]
     mig-enabled: true
     mig-devices:
-      0: 1g.10gb
-      1: 1g.10gb
-      2: 1g.10gb
-      3: 1g.10gb
-      4: 1g.10gb
-      5: 1g.10gb
-      6: 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
   - devices: [3]
     mig-enabled: true
     mig-devices:
-      0: 1g.10gb
-      1: 1g.10gb
-      2: 1g.10gb
-      3: 1g.10gb
-      4: 1g.10gb
-      5: 1g.10gb
-      6: 1g.10gb' --overwrite
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb
+    - 1g.10gb' --overwrite
 done
 
 # Configure MIG profiles for medium node
@@ -64,31 +64,31 @@ mig-configs:
   - devices: [0]
     mig-enabled: true
     mig-devices:
-      0: 2g.20gb
-      2: 2g.20gb
-      4: 2g.20gb
-      6: 1g.10gb
+    - 2g.20gb
+    - 2g.20gb
+    - 2g.20gb
+    - 1g.10gb
   - devices: [1]
     mig-enabled: true
     mig-devices:
-      0: 2g.20gb
-      2: 2g.20gb
-      4: 2g.20gb
-      6: 1g.10gb
+    - 2g.20gb
+    - 2g.20gb
+    - 2g.20gb
+    - 1g.10gb
   - devices: [2]
     mig-enabled: true
     mig-devices:
-      0: 2g.20gb
-      2: 2g.20gb
-      4: 2g.20gb
-      6: 1g.10gb
+    - 2g.20gb
+    - 2g.20gb
+    - 2g.20gb
+    - 1g.10gb
   - devices: [3]
     mig-enabled: true
     mig-devices:
-      0: 2g.20gb
-      2: 2g.20gb
-      4: 2g.20gb
-      6: 1g.10gb' --overwrite
+    - 2g.20gb
+    - 2g.20gb
+    - 2g.20gb
+    - 1g.10gb' --overwrite
 done
 
 echo "MIG profiles configured successfully"
