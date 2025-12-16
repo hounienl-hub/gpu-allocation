@@ -897,7 +897,8 @@ spec:
 
 ## 📚 相关文档
 
-- [README.md](README.md) - 项目概述和快速开始
+- [README.md](../README.md) - 项目概述和快速开始
+- [RESOURCE_CONCEPTS.md](RESOURCE_CONCEPTS.md) - **Available vs Allocated vs Allocatable 深度解析**（含代码示例和架构图）
 - [测试说明.md](测试说明.md) - 详细的测试文档和教程
 - [TEST_REPORT.md](TEST_REPORT.md) - 英文测试报告
 - [RESOURCE_EXHAUSTION_TEST.md](RESOURCE_EXHAUSTION_TEST.md) - 资源耗尽测试

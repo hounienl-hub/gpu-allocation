@@ -578,6 +578,29 @@ Edit `webhook/cmd/main.go` to:
 - Add custom scheduling hints based on node labels
 - Implement GPU affinity rules
 
+## Documentation
+
+For detailed technical documentation, see:
+
+- **[docs/RESOURCE_CONCEPTS.md](docs/RESOURCE_CONCEPTS.md)** - Deep dive into Available vs Allocated vs Allocatable
+  - Complete architecture diagrams showing data flow (Webhook → API Server → etcd)
+  - Code examples with actual implementation
+  - Performance comparison and why webhook only checks Allocatable
+  - Full Pod creation lifecycle explained
+
+- **[docs/FAQ.md](docs/FAQ.md)** - Frequently Asked Questions
+  - Webhook compatibility with real NVIDIA GPUs
+  - Mixed MIG configuration support
+  - How to interact with webhook
+  - Resource checking mechanisms
+  - Troubleshooting guide
+
+- **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** - Comprehensive test report
+
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - Quick start guide
+
+- **[docs/测试说明.md](docs/测试说明.md)** - Chinese test documentation
+
 ## References
 
 - [fake-gpu-operator GitHub](https://github.com/run-ai/fake-gpu-operator)
